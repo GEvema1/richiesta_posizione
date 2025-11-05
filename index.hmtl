@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>CRI Crescentino - Condivisione Posizione</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --cri-red: #D52B1E;
+      --cri-white: #ffffff;
+      --text-color: #333;
+    }
+
+    body {
+      font-family: "Nunito Sans", system-ui, sans-serif;
+      background: var(--cri-white);
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    header {
+      background-color: var(--cri-red);
+      width: 100%;
+      color: white;
+      padding: 1.2em 0;
+      font-weight: bold;
+      font-size: 1.3em;
+      letter-spacing: 1px;
+      line-height: 1.4;
+    }
+
+    header span {
+      display: block;
+      font-size: 0.9em;
+      font-weight: normal;
+    }
+
+    img.logo {
+      width: 110px;
+      margin: 20px 0;
+      border-radius: 50%;
+      border: 2px solid var(--cri-red);
+      background-color: white;
+      padding: 6px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+
+    input, button {
+      padding: 12px;
+      font-size: 16px;
+      margin: 10px;
+      border-radius: 8px;
+      width: 80%;
+      max-width: 320px;
+      box-sizing: border-box;
+    }
+
+    input {
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+
+    button {
+      background-color: var(--cri-red);
+      color: white;
+      border: none;
+      font-weight: bold;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background-color: #b32418;
+    }
+
+    #status {
+      font-size: 1.1em;
+      margin: 15px 0;
+      line-height: 1.5em;
+    }
+
+    #map {
+      height: 300px;
+      width: 90%;
+      max-width: 600px;
+      margin: 20px auto;
+      border-radius: 10px;
+      display: none;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+
+    .loader {
+      border: 6px solid #eee;
+      border-top: 6px solid var(--cri-red);
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin-top: 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    footer {
+      font-size: 0.9em;
+      color: #777;
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    CROCE ROSSA ITALIANA Comitato di CRESCENTINO
+    <span>Sala Operativa Locale</span>
+  </header>
+
+  <img class="logo" src="https://drive.google.com/thumbnail?id=1ji8umz19NksM1Ci-TaNWobl1UnjHp33D&sz=w512" alt="Logo Croce Rossa Italiana">
+
+  <h2>📍 CONDIVIDI LA TUA POSIZIONE</h2>
+
+  <input type="tel" id="phone" placeholder="NUMERO DI TELEFONO" autocomplete="tel">
+  <button onclick="startInvio()">INVIA POSIZIONE</button>
+
+  <div class="loader" style="display:none;"></div>
+  <div id="status"></div>
+  <div id="map"></div>
+
+  <footer>© Croce Rossa Italiana - Comitato di Crescentino</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const scriptURL = "https://script.google.com/macros/s/AKfycbwxa3u8Q87_yNFREGHJZt5k2_BD-oDm270sjtV70u2y8tse2zgZlNKqyn3BeDqgKIF_/exec";
+    let map, marker;
+
+    // Precompila il numero se presente nel link
+    const params = new URLSearchParams(window.location.search);
+    const numeroLink = params.get("num");
+    if (numeroLink) {
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("phone").value = numeroLink;
+      });
+    }
+
+    async function startInvio() {
+      const phone = document.getElementById("phone").value.trim();
+      if (!phone) {
+        document.getElementById("status").innerText = "⚠️ Inserisci il numero di telefono.";
+        return;
+      }
+
+      document.querySelector(".loader").style.display = "block";
+      document.getElementById("status").innerText = "🔍 Rilevamento posizione in corso...";
+
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+
+        let addressParts = {};
+        let fullAddress = "";
+
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&accept-language=it`);
+          const data = await res.json();
+
+          if (data && data.address) {
+            const loc = data.address;
+            fullAddress = (data.display_name || "").toUpperCase();
+            addressParts = {
+              road: (loc.road || "").toUpperCase(),
+              house_number: (loc.house_number || "").toUpperCase(),
+              city: (loc.city || loc.town || loc.village || "").toUpperCase(),
+              county: (loc.state_district || loc.county || "").toUpperCase(),
+              postcode: (loc.postcode || "").toUpperCase(),
+              country: (loc.country || "").toUpperCase()
+            };
+          }
+        } catch (err) {
+          console.error("Reverse geocoding fallito:", err);
+        }
+
+        // ✅ Invia la posizione al foglio (no-cors)
+        try {
+          await fetch(scriptURL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              latitude: lat,
+              longitude: lon,
+              accuracy: accuracy,
+              phone: phone,
+              road: addressParts.road,
+              house_number: addressParts.house_number,
+              city: addressParts.city,
+              county: addressParts.county,
+              postcode: addressParts.postcode,
+              country: addressParts.country
+            })
+          });
+        } catch (err) {
+          console.error("Errore invio dati:", err);
+        }
+
+        // ✅ Aggiorna interfaccia
+        document.querySelector(".loader").style.display = "none";
+        document.querySelector("button").style.display = "none";
+        document.getElementById("status").innerHTML = `
+          ✅ Posizione inviata con successo!<br><br>
+          📞 <strong>${phone}</strong><br>
+          📍 ${fullAddress}<br>
+          🎯 Precisione: ±${Math.round(accuracy)} metri
+        `;
+
+        // ✅ Mostra la mappa
+        document.getElementById("map").style.display = "block";
+        if (!map) {
+          map = L.map('map').setView([lat, lon], 16);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+          }).addTo(map);
+          marker = L.marker([lat, lon]).addTo(map)
+            .bindPopup(`${fullAddress}<br>±${Math.round(accuracy)} m`).openPopup();
+        } else {
+          map.setView([lat, lon], 16);
+          marker.setLatLng([lat, lon]).bindPopup(`${fullAddress}<br>±${Math.round(accuracy)} m`).openPopup();
+        }
+
+      }, () => {
+        document.querySelector(".loader").style.display = "none";
+        document.getElementById("status").innerText = "❌ Errore nel rilevamento della posizione.";
+      });
+    }
+  </script>
+</body>
+</html>
